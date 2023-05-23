@@ -33,10 +33,18 @@ from garage.trainer import Trainer
 
 from additional_envs import MTFlexible
 
+AWS_SHUTDOWN_AVAILABLE = False
+try:
+    from toolbox.aws import shutdown
+    AWS_SHUTDOWN_AVAILABLE = True
+except ImportError:
+    print("AWS shutdown not available.")
+
 
 @click.command()
 # Reproducibility
 @click.option('--seed', 'seed', type=int, default=1)
+@click.option('--shutdown', 'shutdown', type=bool, default=False, help="Shutdown the AWS instance after the experiment.")
 
 # Parallelism
 @click.option('--sampler', 'sampler', type=str, default="local", help="Sampler to use. Can be either local or ray.")
@@ -62,6 +70,7 @@ from additional_envs import MTFlexible
 @wrap_experiment(snapshot_mode='gap', snapshot_gap=50)
 def metaworld_mtf(ctxt=None, *,
                     seed: int,
+                    shutdown: bool,
                     sampler: str,
                     n_tasks: int,
                     n_redundance: int,
@@ -251,6 +260,9 @@ def metaworld_mtf(ctxt=None, *,
     algo_object.to()
     trainer.setup(algo=algo_object, env=mtf_train_envs)
     trainer.train(n_epochs=epochs, batch_size=batch_size)
+
+    if shutdown and AWS_SHUTDOWN_AVAILABLE:
+        shutdown()
 
 
 # pylint: disable=missing-kwoa
