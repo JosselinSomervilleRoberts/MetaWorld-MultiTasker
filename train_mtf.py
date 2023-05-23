@@ -6,8 +6,14 @@ Compared to the paper we do not support TE-PPO as it relies on Tensorflow.
 We provide a Pytorch only implementation.
 """
 
+# Disable warnings (use at your own risk)
+import warnings
+warnings.filterwarnings("ignore")
+
 import click
 import numpy as np
+import psutil
+
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -17,7 +23,7 @@ from garage.envs import normalize
 from garage.experiment import deterministic
 from garage.experiment.task_sampler import MetaWorldTaskSampler
 from garage.replay_buffer import PathBuffer
-from garage.sampler import FragmentWorker, LocalSampler
+from garage.sampler import FragmentWorker, LocalSampler, RaySampler
 from garage.torch import set_gpu_mode
 from garage.torch.algos import MTSAC, PPO, TRPO
 from garage.torch.policies import TanhGaussianMLPPolicy, GaussianMLPPolicy
@@ -33,9 +39,10 @@ from additional_envs import MTFlexible
 @click.option('--seed', 'seed', type=int, default=1)
 
 # Parallelism
+@click.option('--sampler', 'sampler', type=str, default="local", help="Sampler to use. Can be either local or ray.")
 @click.option('--n_tasks', 'n_tasks', type=int, default=3, help="Number of tasks to use in the benchmarks. Use 10 for MT10 and 3 for MT3.")
 @click.option('--n_redundance', 'n_redundance', type=int, default=1, help="Number of times to duplicate each task. With n_tasks = 3 and n_redundance= 4, we will simulate 12 environments (then duplicated again with n_envs).")
-@click.option('--n_workers', 'n_workers', type=int, default=1, help="Number of workers to use. Each worker will simulate n_envs environments.")
+@click.option('--n_workers', type=int, default=-1, help="Number of workers to use. If -1, it will be set to psutil.cpu_count(logical=False)")
 @click.option('--n_envs', 'n_envs', type=int, default=2, help="Number of environments per worker. Each environment is approximately ~50mb large. So n_tasks * n_parallel * n_envs * 50mb should give you an idea of the memory usage.")
 
 # RL parameters
@@ -49,12 +56,13 @@ from additional_envs import MTFlexible
 
 # Training parameters
 @click.option('--timesteps', 'timesteps', type=int, default=20000000)
-@click.option('--use_gpu', 'use_gpu', type=bool, default=False)
+@click.option('--use_gpu', 'use_gpu', type=bool, default=True)
 @click.option('--batch_size', 'batch_size', type=int, default=-1, help="Batch size. If -1, it will be set to int(env.spec.max_episode_length * n_workers).")
 
 @wrap_experiment(snapshot_mode='gap', snapshot_gap=50)
 def metaworld_mtf(ctxt=None, *,
                     seed: int,
+                    sampler: str,
                     n_tasks: int,
                     n_redundance: int,
                     n_workers: int,
@@ -79,6 +87,7 @@ def metaworld_mtf(ctxt=None, *,
     assert n_redundance >= 1, "n_redundance must be >= 1"
     assert n_redundance * n_tasks <= 500, "n_redundance * n_tasks must be <= 500"
     assert algo in ["mtsac", "ppo", "trpo"], "algo must be either mtsac, ppo or trpo"
+    assert sampler in ["local", "ray"], "sampler must be either local or ray"
 
     # Set up experiment
     deterministic.set_seed(seed)
@@ -103,6 +112,8 @@ def metaworld_mtf(ctxt=None, *,
     
 
     # Set default args
+    if n_workers < 0:
+        n_workers = psutil.cpu_count(logical=False)
     if batch_size < 0:
         batch_size = int(env.spec.max_episode_length * n_workers)
     epochs = timesteps // batch_size
@@ -111,6 +122,7 @@ def metaworld_mtf(ctxt=None, *,
     print("============= Arguments =============")
     print("seed: {}".format(seed))
     print('')
+    print("sampler: {}".format(sampler))
     print("n_tasks: {}".format(n_tasks))
     print("n_redundance: {}".format(n_redundance))
     print("n_workers: {}".format(n_workers))
@@ -129,7 +141,7 @@ def metaworld_mtf(ctxt=None, *,
     print("epochs: {}".format(epochs))
     print("======================================")
 
-    policy = None
+    policy, qf1, qf2, value_function = None, None, None, None
     hidden_sizes = [size_hidden_layers] * n_hidden_layers
     if algo == "mtsac":
         policy = TanhGaussianMLPPolicy(
@@ -164,24 +176,39 @@ def metaworld_mtf(ctxt=None, *,
 
     replay_buffer = PathBuffer(capacity_in_transitions=replay_buffer_size, )
 
-    sampler = LocalSampler(
-        agents=policy,
-        envs=mtf_train_envs,
-        max_episode_length=env.spec.max_episode_length,
-        n_workers=n_tasks * n_redundance,
-        worker_class=FragmentWorker,
-        worker_args=dict(n_envs=n_envs))
+    sampler_object = None
+    if sampler == "local":
+        print("Using local sampler")
+        sampler_object = LocalSampler(
+            agents=policy,
+            envs=mtf_train_envs,
+            max_episode_length=env.spec.max_episode_length,
+            n_workers=n_tasks * n_redundance,
+            worker_class=FragmentWorker,
+            worker_args=dict(n_envs=n_envs))
+    elif sampler == "ray":
+        print("Using ray sampler")
+        sampler_object = RaySampler(agents=policy,
+                            envs=env,
+                            max_episode_length=env.spec.max_episode_length,
+                            n_workers=n_workers)
+    else:
+        raise ValueError("sampler must be either local or ray")
     
 
     algo_object = None
     if algo == "mtsac":
         num_evaluation_points = 500
         epoch_cycles = epochs // num_evaluation_points
+        print(f"Using MTSAC with {num_evaluation_points} evaluation points and {epoch_cycles} epoch cycles")
+        assert policy is not None
+        assert qf1 is not None
+        assert qf2 is not None
 
         algo_object = MTSAC(policy=policy,
                     qf1=qf1,
                     qf2=qf2,
-                    sampler=sampler,
+                    sampler=sampler_object,
                     gradient_steps_per_itr=env.spec.max_episode_length,
                     eval_env=mtf_test_envs,
                     env_spec=env.spec,
@@ -193,21 +220,31 @@ def metaworld_mtf(ctxt=None, *,
                     discount=discount,
                     buffer_batch_size=1280)
     elif algo == "ppo":
+        print("Using PPO")
+        assert policy is not None
+        assert value_function is not None
+
         algo_object = PPO(env_spec=env.spec,
                policy=policy,
                value_function=value_function,
-               sampler=sampler,
+               sampler=sampler_object,
                discount=discount,
                gae_lambda=0.95,
                center_adv=True,
                lr_clip_range=0.2)
     elif algo == "trpo":
+        print("Using TRPO")
+        assert policy is not None
+        assert value_function is not None
+
         algo_object = TRPO(env_spec=env.spec,
                 policy=policy,
                 value_function=value_function,
-                sampler=sampler,
+                sampler=sampler_object,
                 discount=discount,
                 gae_lambda=0.95)
+    else:
+        raise ValueError("algo must be either mtsac, ppo or trpo")
 
     if use_gpu:      
         set_gpu_mode(True)
