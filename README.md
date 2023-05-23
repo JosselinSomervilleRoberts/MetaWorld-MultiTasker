@@ -9,8 +9,13 @@ pip install tensorflow
 conda install pytorch torchvision torchaudio pytorch-cuda=11.7 -c pytorch -c nvidia
 ```
 
-```
+```bash
 conda install tensorflow-estimator
+```
+
+Also install the Toolbox:
+```bash
+pip install git+https://github.com/JosselinSomervilleRoberts/JossPythonToolbox.git
 ```
 
 ### 2. Install MuJoco
