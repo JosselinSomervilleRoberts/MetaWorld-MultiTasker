@@ -64,6 +64,7 @@ except ImportError:
 
 # Training parameters
 @click.option('--timesteps', 'timesteps', type=int, default=20000000)
+@click.option('--epoch_cycles', 'epoch_cycles', type=int, default=8)
 @click.option('--use_gpu', 'use_gpu', type=bool, default=True)
 @click.option('--batch_size', 'batch_size', type=int, default=-1, help="Batch size. If -1, it will be set to int(env.spec.max_episode_length * n_workers).")
 
@@ -82,6 +83,7 @@ def metaworld_mtf(ctxt=None, *,
                     size_hidden_layers: int,
                     replay_buffer_size: int,
                     timesteps: int,
+                    epoch_cycles: int,
                     use_gpu: bool,
                     batch_size: int):
     """Train either MTSAC, PPO or TRPO with MTFlexible environment.
@@ -117,12 +119,14 @@ def metaworld_mtf(ctxt=None, *,
                                              add_env_onehot=True)
     mtf_train_envs = train_task_sampler.sample(n_tasks * n_redundance)
     env = mtf_train_envs[0]()
-    mtf_test_envs = [env_up() for env_up in test_task_sampler.sample(n_tasks * n_redundance)]
+    mtf_test_envs = [env_up() for env_up in test_task_sampler.sample(n_tasks)]
     
 
     # Set default args
     if n_workers < 0:
         n_workers = psutil.cpu_count(logical=False)
+        if algo == "mtsac":
+            n_workers = n_tasks * n_redundance
     if batch_size < 0:
         batch_size = int(env.spec.max_episode_length * n_workers)
     epochs = timesteps // batch_size
@@ -145,6 +149,7 @@ def metaworld_mtf(ctxt=None, *,
     print("replay_buffer_size: {}".format(replay_buffer_size))
     print('')
     print("timesteps: {}".format(timesteps))
+    print("epoch_cycles: {} (MTSAC only)".format(epoch_cycles))
     print("use_gpu: {}".format(use_gpu))
     print("batch_size: {}".format(batch_size))
     print("epochs: {}".format(epochs))
@@ -208,7 +213,7 @@ def metaworld_mtf(ctxt=None, *,
     algo_object = None
     if algo == "mtsac":
         num_evaluation_points = 500
-        epoch_cycles = epochs // num_evaluation_points
+        epochs = epochs // epoch_cycles
         print(f"Using MTSAC with {num_evaluation_points} evaluation points and {epoch_cycles} epoch cycles")
         assert policy is not None
         assert qf1 is not None
