@@ -50,4 +50,4 @@ yes y | pip install git+https://github.com/Farama-Foundation/Metaworld.git@maste
 yes y | pip install gym[box2d]
 # Fix metaworld bug 'Maximum path length allowed by the benchmark has been exceeded'
 cd $pwd
-cp ./mujoco_env_file_fixed /opt/conda/envs/rlgarage/lib/python3.8/site-packages/metaworld/envs/mujoco/mujoco_env.py
+cp ./mujoco_env_file_fixed.py /opt/conda/envs/rlgarage/lib/python3.8/site-packages/metaworld/envs/mujoco/mujoco_env.py
