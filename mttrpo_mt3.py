@@ -22,8 +22,8 @@ from additional_envs import MT3
 
 @click.command()
 @click.option('--seed', default=1)
-@click.option('--epochs', default=500)
-@click.option('--batch_size', default=1024)
+@click.option('--epochs', default=2000)
+@click.option('--batch_size', default=2048)
 @click.option('--n_workers', default=psutil.cpu_count(logical=False))
 @click.option('--n_tasks', default=3)
 @wrap_experiment(snapshot_mode='all')
