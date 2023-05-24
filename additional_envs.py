@@ -47,17 +47,18 @@ class MT3(metaworld.Benchmark):
 
 # =========== Custom MTFlexible (N first tasks of MT10) =========== #
 
+# Ordered by increasing difficulty (according to the paper)
 MTFLEXIBLE_V2 = OrderedDict(
     (('reach-v2', SawyerReachEnvV2),
-     ('push-v2', SawyerPushEnvV2),
-     ('pick-place-v2', SawyerPickPlaceEnvV2),
-     ('door-open-v2', SawyerDoorEnvV2),
-     ('drawer-open-v2', SawyerDrawerOpenEnvV2),
      ('drawer-close-v2', SawyerDrawerCloseEnvV2),
-     ('button-press-topdown-v2', SawyerButtonPressTopdownEnvV2),
-     ('peg-insert-side-v2', SawyerPegInsertionSideEnvV2),
+     ('drawer-open-v2', SawyerDrawerOpenEnvV2),
      ('window-open-v2', SawyerWindowOpenEnvV2),
-     ('window-close-v2', SawyerWindowCloseEnvV2)),)
+     ('button-press-topdown-v2', SawyerButtonPressTopdownEnvV2),
+     ('window-close-v2', SawyerWindowCloseEnvV2),
+     ('door-open-v2', SawyerDoorEnvV2),
+     ('push-v2', SawyerPushEnvV2),
+     ('peg-insert-side-v2', SawyerPegInsertionSideEnvV2),
+     ('pick-place-v2', SawyerPickPlaceEnvV2)),)
      
 class MTFlexible(metaworld.Benchmark):
     def __init__(self, n: int, seed=None):
