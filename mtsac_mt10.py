@@ -3,6 +3,12 @@
 
 https://arxiv.org/pdf/1910.10897.pdf
 """
+
+# Disable warnings (use at your own risk)
+import warnings
+warnings.filterwarnings("ignore")
+
+
 import click
 import metaworld
 import numpy as np
@@ -100,10 +106,13 @@ def mtsac_metaworld_mt10(ctxt=None, *, seed, _gpu, n_tasks, timesteps):
         worker_args=dict(n_envs=2))
 
     batch_size = int(env.spec.max_episode_length * meta_batch_size)
+    print(f"Batch size {batch_size}")
     num_evaluation_points = 500
     epochs = timesteps // batch_size
     epoch_cycles = epochs // num_evaluation_points
+    print(f"Epoch cycles {epoch_cycles}")
     epochs = epochs // epoch_cycles
+    print(f"Epochs {epochs}")
     mtsac = MTSAC(policy=policy,
                   qf1=qf1,
                   qf2=qf2,
